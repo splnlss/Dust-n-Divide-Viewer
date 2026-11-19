@@ -1,6 +1,6 @@
 {
     "name": "@splnlss/dust-n-divide-viewer",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "type": "module",
     "description": "Vanilla WebGPU viewer for PlayCanvas streamed SOG gaussian splats, tuned for Quest 3 VR",
     "repository": {
