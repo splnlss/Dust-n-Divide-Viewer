@@ -102,7 +102,6 @@ async function main() {
     renderer.setAnimationLoop((time) => {
         knot.rotation.y = time / 1000;
         renderer.render(scene, camera);
-        splats.render(camera);
         frames++;
         if (time - last > 500) {
             const r = splats.splatRenderer;

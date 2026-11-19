@@ -654,15 +654,16 @@ export class SplatRenderer {
     render(frame) {
         const d = this.device;
         const depth = frame.depth ?? null;
+        const draws = !frame.computeOnly;
         const key = `${frame.format}|${frame.antialiased}|${depthKey(depth)}`;
-        let pipeline = this.renderPipelines.get(key);
-        if (!pipeline) {
+        let pipeline = draws ? this.renderPipelines.get(key) : null;
+        if (draws && !pipeline) {
             pipeline = d.createRenderPipeline(this.renderPipelineDesc(frame.format, frame.antialiased, depth));
             this.renderPipelines.set(key, pipeline);
         }
         const passKey = `${frame.format}|${depthKey(depth)}`;
         let skyPipeline = null;
-        if (frame.sky) {
+        if (draws && frame.sky) {
             skyPipeline = this.skyPipelines.get(passKey);
             if (!skyPipeline) {
                 skyPipeline = d.createRenderPipeline(this.skyPipelineDesc(frame.format, depth));
@@ -672,7 +673,7 @@ export class SplatRenderer {
         }
         let overlayPipeline = null,
             overlayCount = 0;
-        if (frame.overlay?.count > 0) {
+        if (draws && frame.overlay?.count > 0) {
             overlayPipeline = this.overlayPipelines.get(passKey);
             if (!overlayPipeline) {
                 overlayPipeline = d.createRenderPipeline(this.overlayPipelineDesc(frame.format, depth));
@@ -734,7 +735,7 @@ export class SplatRenderer {
             }
             pass.end();
         }
-        for (let first = 0; first < nViews; ) {
+        for (let first = 0; draws && first < nViews; ) {
             let end = first + 1;
             while (end < nViews && frame.views[end].clear === false && !frame.views[end].ownPass) end++;
             const underlay = depth && frame.views[first].colorSource && frame.views[first].depthSource;

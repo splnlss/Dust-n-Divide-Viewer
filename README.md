@@ -33,7 +33,9 @@ controls, VR and the HUD.
 
 ### With three.js
 
-Splats can be drawn into a three.js scene, and three.js meshes in front of them hide them.
+`GaussianSplats` is a three.js mesh: three.js draws it in its own passes, sorted with the scene's
+other transparent objects, and meshes in front of it hide it. Sorting and level of detail run on the
+GPU before three.js draws.
 three.js 0.187 is a peer dependency, so install it in your app:
 
 ```js
@@ -44,17 +46,14 @@ const splats = new GaussianSplats(renderer);
 await splats.load('https://…/lod-meta.json');
 scene.add(splats);
 
-renderer.setAnimationLoop(() => {
-    renderer.render(scene, camera);
-    splats.render(camera);
-});
+renderer.setAnimationLoop(() => renderer.render(scene, camera));
 
 const point = await splats.hitTest(raycaster.ray);
 ```
 
-`demo/three.html` is a working example, including VR through three.js. Not supported yet: MSAA
-(`antialias` must stay off), tone mapping in VR, more than one `GaussianSplats` per renderer in VR,
-and transparent three.js objects in front of splats.
+`demo/three.html` is a working example. Splats are blended in three.js's linear colour space, so
+faint overlapping splats look slightly hazier than in the standalone viewer, which blends in display
+colour space.
 
 Supported scenes:
 

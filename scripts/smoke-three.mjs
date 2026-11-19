@@ -29,8 +29,9 @@ try {
                     const r = window.__renderer;
                     r.setAnimationLoop(null);
                     requestAnimationFrame(() => {
+                        window.__splats.visible = !depthOff;
                         r.render(window.__scene, window.__camera);
-                        if (!depthOff) window.__splats.render(window.__camera);
+                        window.__splats.visible = true;
                         resolve(r.domElement.toDataURL('image/png'));
                     });
                 }),
