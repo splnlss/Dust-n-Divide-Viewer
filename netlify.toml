@@ -1,9 +1,0 @@
-[build]
-  command = "node scripts/build.mjs"
-  publish = "dist"
-
-[[headers]]
-  for = "/src/*"
-  [headers.values]
-    Cache-Control = "no-cache"
-

@@ -7,7 +7,31 @@ No framework, no TypeScript, no build step. The browser loads the ES modules in
 `src/` directly. The dev dependencies are Vite (dev server only) and `puppeteer-core` for the
 headless smoke test.
 
-## Run
+## Use as a dependency
+
+The package is published to GitHub Packages as `@splnlss/dust-n-divide-viewer`. A consuming repo
+needs an `.npmrc` that points the scope at that registry, with a GitHub token that can read
+packages (GitHub Packages requires one even for public packages):
+
+```
+@splnlss:registry=https://npm.pkg.github.com/
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```
+
+```sh
+pnpm add @splnlss/dust-n-divide-viewer
+```
+
+There is no build step: the package is the ES modules in `src/`, imported by path.
+
+```js
+import { createBackend } from '@splnlss/dust-n-divide-viewer/webgpu/backend.js';
+import { SplatScene } from '@splnlss/dust-n-divide-viewer/scene/SplatScene.js';
+```
+
+`src/main.js` and `index.html` are the demo app and show how the pieces fit together.
+
+## Run the demo
 
 ```sh
 pnpm install
@@ -254,24 +278,11 @@ With developer mode on and the headset connected over USB (`adb devices` must li
 - GPU memory is fixed at `capacity`. Chunks are ~0.5M splats each and load whole, so `capacity`
   should be a few times `budget`.
 
-## Publishing (Netlify)
+## Releasing
 
-The site is static and has no compile step; `pnpm build` (`scripts/build.mjs`) copies
-`index.html` and `src/` into `dist/`. The scene loads from R2, so no data is deployed.
-
-GitLab CI (`.gitlab-ci.yml`) builds every push and deploys `dist/` to Netlify with `netlify-cli`
-on pushes to `main` only. The Netlify project was created by uploading files, so Netlify itself
-never builds. The pipeline needs two CI/CD variables, both protected: `NETLIFY_AUTH_TOKEN` (a
-Netlify personal access token) and `NETLIFY_SITE_ID` (the project ID). Netlify serves HTTPS, which
-WebGPU and WebXR need; `netlify.toml` sets cache headers.
-
-To deploy by hand instead:
-
-```sh
-pnpm build
-npx netlify-cli deploy --dir dist            # draft URL, to check on the headset
-npx netlify-cli deploy --dir dist --prod
-```
+`.github/workflows/publish.yml` runs `pnpm publish` on every push to `main`. A version can only be
+published once, so bump `version` in `package.json` in the commit that should be released; pushes
+that leave it unchanged fail the publish job and publish nothing.
 
 ## Smoke test
 
@@ -306,7 +317,7 @@ src/webgpu/           the WebGPU backend
 
 src/webgl/backend.js  placeholder for the WebGL 2 backend
 vite.config.js        dev server (HTTPS, and the /log endpoint for `log: true`)
-scripts/              build.mjs (copy to dist/ for publishing), smoke.mjs (headless test)
+scripts/smoke.mjs     headless smoke test
 ```
 
 ## References
