@@ -1,4 +1,4 @@
-import { DynamicDrawUsage, InterleavedBuffer, InterleavedBufferAttribute, BufferGeometry, Mesh, NodeMaterial, NormalBlending } from 'three/webgpu';
+import { BufferGeometry, DoubleSide, DynamicDrawUsage, InterleavedBuffer, InterleavedBufferAttribute, Mesh, NodeMaterial, NormalBlending } from 'three/webgpu';
 import { attribute, vec4 } from 'three/tsl';
 import { mat4, multiply } from '../math.js';
 import { TeleportAim } from '../teleport.js';
@@ -26,6 +26,7 @@ export class OverlayMesh extends Mesh {
         material.transparent = true;
         material.blending = NormalBlending;
         material.depthTest = false;
+        material.side = DoubleSide;
         material.depthWrite = false;
         super(geometry, material);
         this.overlay = overlay;

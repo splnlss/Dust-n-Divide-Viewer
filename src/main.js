@@ -112,6 +112,7 @@ async function main() {
         const name = source instanceof Blob ? source.name : source;
         const splats = new GaussianSplats(renderer, {
             budget: renderer.xr.isPresenting ? xrBudgetControl.value : budgetControl.value,
+            maxBudget: Math.max(budgetControl.max, xrBudgetControl.max),
             onProgress: (done, total) => {
                 msg.textContent = `Loading ${String(name).split('/').pop()}: ${Math.floor((100 * done) / total)}%  (${(done / 1e6).toFixed(1)}M of ${(total / 1e6).toFixed(1)}M splats)`;
             },
@@ -309,6 +310,7 @@ async function main() {
         __renderer: renderer,
         __scene: scene,
         __camera: camera,
+        __nav: nav,
     });
     Object.defineProperty(window, '__splats', { get: () => current, configurable: true });
 

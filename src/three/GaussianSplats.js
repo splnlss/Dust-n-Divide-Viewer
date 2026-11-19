@@ -157,7 +157,7 @@ export class GaussianSplats extends Mesh {
         if (isPly) this.#ply = await openPly(source);
         const renderer = new SplatRenderer(three.backend.device, {
             capacity: Math.max(o.capacity, this.#ply?.count ?? 0),
-            maxDraw: Math.max(this.#ply?.count ?? 0, Math.ceil(o.budget * 1.5)),
+            maxDraw: Math.max(this.#ply?.count ?? 0, Math.ceil(Math.max(o.budget, o.maxBudget ?? 0) * 1.5)),
             sortBits: o.sortBits,
             tieBreak: o.tieBreak,
             f16: o.f16,
