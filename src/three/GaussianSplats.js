@@ -9,7 +9,7 @@ import { enableWebGpuHelp } from '../webgpuHelp.js';
 
 const DEFAULTS = {
     budget: standalone ? 1_000_000 : 3_000_000,
-    capacity: standalone ? 4_000_000 : 12_000_000,
+    capacity: standalone ? 8_000_000 : 12_000_000,
     sortBits: standalone ? 18 : 20,
     lodBase: 5,
     lodMult: 3,
