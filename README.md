@@ -51,7 +51,8 @@ renderer.setAnimationLoop(() => renderer.render(scene, camera));
 const point = await splats.hitTest(raycaster.ray);
 ```
 
-`demo/three.html` is a working example. Splats are blended in three.js's linear colour space, so
+For VR, `three/navigation.js` has `XRNavigation`, which moves a camera rig with the controllers,
+and `applyFlyControls` for the desktop camera. `src/main.js` uses both. Splats are blended in three.js's linear colour space, so
 faint overlapping splats look slightly hazier than in the standalone viewer, which blends in display
 colour space.
 
@@ -80,6 +81,14 @@ pnpm dev
 Open the printed `https://` URL (accept the self-signed certificate warning). Add
 `?scene=<url>` to load another scene, or drop a `.ply` or `.sog` file onto the page.
 Settings are in `src/config.js`.
+
+| Device | Look | Move |
+|---|---|---|
+| Mouse + keyboard | left drag | `WASD` / arrows, `Q`/`E` down/up, wheel, right drag pans, `Shift` faster, `[`/`]` speed, `+`/`-` splat budget, double-click to jump there |
+| Touch | one-finger drag | two fingers pan and pinch |
+| Quest controllers | your head | left stick moves, right stick turns and flies, hold the trigger to aim the arc and release to jump, right `B`/`A` raise/lower the splat budget |
+
+`demo/standalone.html` is the viewer without three.js, kept as the performance reference.
 
 ## Release
 

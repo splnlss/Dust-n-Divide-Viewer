@@ -12,7 +12,7 @@ const chrome = process.env.CHROME ?? '/usr/bin/google-chrome';
 
 const server = await createServer({ root: fileURLToPath(new URL('..', import.meta.url)), configFile: false, logLevel: 'error', server: { port: 5190, strictPort: false } });
 await server.listen();
-const url = `${server.resolvedUrls.local[0]}?${query}`;
+const url = `${server.resolvedUrls.local[0]}${process.env.SMOKE_PAGE ?? ''}?${query}`;
 
 const browser = await puppeteer.launch({
     executablePath: chrome,

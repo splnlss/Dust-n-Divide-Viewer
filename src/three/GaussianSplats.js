@@ -119,6 +119,7 @@ export class GaussianSplats extends Mesh {
     isGaussianSplats = true;
     scene = null;
     splatRenderer = null;
+    pick = null;
     #three;
     #options;
     #ply = null;
@@ -252,7 +253,7 @@ export class GaussianSplats extends Mesh {
         }
         const view = views[0].view;
         this.scene.update(transformPoint(this.#invModel, [x, y, z]), transformDir(this.#invModel, [-view[2], -view[6], -view[10]]), performance.now());
-        renderer.render({ views, model, near, antialiased: this.scene.antialiased, minTrace: this.#options.minPixel ** 2, computeOnly: true });
+        renderer.render({ views, model, near, antialiased: this.scene.antialiased, minTrace: this.#options.minPixel ** 2, pick: this.pick, computeOnly: true });
     }
 
     async hitTest(ray, maxDistance = 300) {

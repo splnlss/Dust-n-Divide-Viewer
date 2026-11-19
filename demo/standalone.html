@@ -3,7 +3,7 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Dust and Divide three.js demo</title>
+        <title>Dust and Divide standalone viewer</title>
         <link rel="icon" href="data:," />
         <style>
             html,
@@ -25,17 +25,7 @@
                 width: 100vw;
                 height: 100vh;
                 touch-action: none;
-            }
-            #msg {
-                position: fixed;
-                inset: 0;
-                display: grid;
-                place-items: center;
-                padding: 24px;
-                text-align: center;
-                white-space: pre-line;
-                font-size: 14px;
-                pointer-events: none;
+                cursor: grab;
             }
             #hud {
                 position: fixed;
@@ -46,6 +36,7 @@
                 pointer-events: none;
                 background: rgba(16, 16, 20, 0.72);
                 border-radius: 6px;
+                min-width: 22ch;
             }
             #bar {
                 position: fixed;
@@ -82,15 +73,45 @@
             #note:empty {
                 display: none;
             }
+            #msg {
+                position: fixed;
+                inset: 0;
+                display: grid;
+                place-items: center;
+                padding: 24px;
+                text-align: center;
+                font-size: 14px;
+                pointer-events: none;
+            }
+            #buttons {
+                display: flex;
+                gap: 8px;
+            }
+            #drop {
+                position: fixed;
+                inset: 12px;
+                display: grid;
+                place-items: center;
+                font-size: 18px;
+                pointer-events: none;
+                border: 2px dashed #5b6cff;
+                border-radius: 12px;
+                background: rgba(16, 16, 20, 0.6);
+            }
+            #drop[hidden] {
+                display: none;
+            }
         </style>
     </head>
     <body>
+        <canvas id="canvas"></canvas>
         <div id="hud"></div>
         <div id="bar">
-            <button id="vr" disabled>Enter VR</button>
+            <div id="buttons"><button id="vr" disabled>Enter VR</button></div>
             <div id="note"></div>
         </div>
+        <div id="drop" hidden>Drop a .ply or .sog file</div>
         <div id="msg">Loading…</div>
-        <script type="module" src="./three.js"></script>
+        <script type="module" src="./standalone.js"></script>
     </body>
 </html>

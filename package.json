@@ -19,8 +19,7 @@
     "scripts": {
         "dev": "vite",
         "start": "vite",
-        "smoke": "node scripts/smoke.mjs",
-        "smoke:three": "node scripts/smoke-three.mjs"
+        "smoke": "node scripts/smoke.mjs"
     },
     "peerDependencies": {
         "three": "~0.187.0"
