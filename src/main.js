@@ -1,4 +1,4 @@
-import { Color, Group, PerspectiveCamera, Raycaster, Scene, SRGBColorSpace, Vector2, Vector3 } from 'three/webgpu';
+import { BoxGeometry, Color, DirectionalLight, Group, HemisphereLight, Mesh, MeshStandardMaterial, PerspectiveCamera, Raycaster, Scene, SRGBColorSpace, TorusKnotGeometry, Vector2, Vector3 } from 'three/webgpu';
 import { mix, positionWorldDirection, select, smoothstep, vec3 } from 'three/tsl';
 import { FlyControls } from './controls.js';
 import { BudgetControl } from './budgetControl.js';
@@ -84,6 +84,20 @@ async function main() {
     });
     scene.add(nav.overlay);
 
+    const testObjects = [];
+    let knot = null;
+    if (settings.testObjects) {
+        const sun = new DirectionalLight(0xffffff, 2);
+        sun.position.set(3, 6, 4);
+        scene.add(new HemisphereLight(0xffffff, 0x444455, 2), sun);
+        const box = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ color: 0xd04040 }));
+        box.position.set(-1.5, 2, 6);
+        knot = new Mesh(new TorusKnotGeometry(0.4, 0.14, 128, 16), new MeshStandardMaterial({ color: 0x40a0e0, metalness: 0.3, roughness: 0.4 }));
+        knot.position.set(1.5, 2.2, 3);
+        scene.add(box, knot);
+        testObjects.push(box, knot);
+    }
+
     let current = null;
 
     async function open(source) {
@@ -147,7 +161,10 @@ async function main() {
         if (!settings.teleport || !current) return;
         const r = canvas.getBoundingClientRect();
         raycaster.setFromCamera(new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
-        const hit = await current.hitTest(raycaster.ray);
+        const meshHit = raycaster.intersectObjects(testObjects)[0]?.point ?? null;
+        const splatHit = await current.hitTest(raycaster.ray);
+        const distance = (p) => (p ? p.distanceTo(raycaster.ray.origin) : Infinity);
+        const hit = distance(meshHit) < distance(splatHit) ? meshHit : splatHit;
         if (hit) controls.position = [hit.x, hit.y + EYE_HEIGHT, hit.z];
     });
 
@@ -251,6 +268,7 @@ async function main() {
 
     renderer.setAnimationLoop(() => {
         const now = performance.now();
+        if (knot) knot.rotation.y = now / 1000;
         const dtMs = now - last;
         last = now;
         frameMs += (dtMs - frameMs) * 0.1;

@@ -51,6 +51,8 @@ export const config = {
     stereo: false,
     log: false,
     wander: 0,
+    // adds a red cube and a spinning blue knot to the scene, for checking occlusion between meshes and splats
+    testObjects: true,
 };
 
 const q = new URLSearchParams(location.search);
