@@ -138,7 +138,7 @@ fn vs(@builtin(vertex_index) vidx: u32) -> VOut {
 
   if (SRGB_OUT) { col = vec4f(pow(col.rgb, vec3f(2.2)), col.a); }
 
-  out.pos = vec4f(clip.xy + off * pxToClip, 0.5 * clip.w, clip.w);
+  out.pos = vec4f(clip.xy + off * pxToClip, clamp(clip.z, 0.0, clip.w), clip.w);
   out.q = corner * r;
   out.color = col;
   return out;

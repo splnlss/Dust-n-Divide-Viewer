@@ -23,6 +23,8 @@ function preprocess(src, defines) {
     return out.join('\n');
 }
 const stage = (src, n) => preprocess(src, { STAGE: n });
+const depthKey = (depth) => (depth ? `${depth.format}|${depth.compare}` : '');
+const depthState = (depth) => (depth ? { format: depth.format, depthWriteEnabled: false, depthCompare: depth.compare } : undefined);
 export class SplatRenderer {
     device;
     capacity;
@@ -89,6 +91,7 @@ export class SplatRenderer {
     pickRead;
     pickPending = false;
     pickData = new Float32Array(PICK_SIZE / 4);
+    pickRequests = [];
     expandGroup;
     keyGroup;
     prefixGroup;
@@ -301,18 +304,32 @@ export class SplatRenderer {
             ],
         });
     }
-    async prepare(format, antialiased) {
-        const key = `${format}|${antialiased}`;
+    async prepare(format, antialiased, depth = null) {
+        const d = this.device;
+        const key = `${format}|${antialiased}|${depthKey(depth)}`;
         let p = this.renderPipelines.get(key);
         if (!p) {
-            p = await this.device.createRenderPipelineAsync(this.renderPipelineDesc(format, antialiased));
+            p = await d.createRenderPipelineAsync(this.renderPipelineDesc(format, antialiased, depth));
             this.renderPipelines.set(key, p);
         }
-        if (!this.skyPipelines.has(format)) this.skyPipelines.set(format, await this.device.createRenderPipelineAsync(this.skyPipelineDesc(format)));
-        if (!this.overlayPipelines.has(format)) this.overlayPipelines.set(format, await this.device.createRenderPipelineAsync(this.overlayPipelineDesc(format)));
+        const passKey = `${format}|${depthKey(depth)}`;
+        if (!this.skyPipelines.has(passKey)) this.skyPipelines.set(passKey, await d.createRenderPipelineAsync(this.skyPipelineDesc(format, depth)));
+        if (!this.overlayPipelines.has(passKey)) this.overlayPipelines.set(passKey, await d.createRenderPipelineAsync(this.overlayPipelineDesc(format, depth)));
         return p;
     }
-    overlayPipelineDesc(format) {
+    isPrepared(format, antialiased, depth = null) {
+        return this.renderPipelines.has(`${format}|${antialiased}|${depthKey(depth)}`);
+    }
+    destroy() {
+        for (const value of Object.values(this)) {
+            if (value instanceof GPUBuffer || value instanceof GPUTexture || value instanceof GPUQuerySet) value.destroy();
+        }
+        for (const pick of this.pickRequests.splice(0)) pick.resolve(null);
+    }
+    hitTest(ray) {
+        return new Promise((resolve) => this.pickRequests.push({ ...ray, resolve }));
+    }
+    overlayPipelineDesc(format, depth = null) {
         const blend = { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' };
         return {
             label: `overlay ${format}`,
@@ -332,13 +349,13 @@ export class SplatRenderer {
             },
             fragment: { module: this.overlayModule, entryPoint: 'fs', targets: [{ format, blend: { color: blend, alpha: blend } }] },
             primitive: { topology: 'triangle-list' },
+            depthStencil: depthState(depth),
         };
     }
-    encodePick(encoder, frame) {
-        const pk = frame.pick;
+    encodePick(encoder, model, pk) {
         const f = this.pickData;
         const u = new Uint32Array(f.buffer);
-        f.set(frame.model, 0);
+        f.set(model, 0);
         f.set(pk.start, 16);
         f[19] = pk.maxU;
         f[20] = pk.dir[0];
@@ -373,8 +390,15 @@ export class SplatRenderer {
         this.device.queue.writeBuffer(this.overlayVertices, 0, frame.overlay.data, 0, (count * OVERLAY_STRIDE) / 4);
         return count;
     }
-    skyPipelineDesc(format) {
-        return { label: `sky ${format}`, layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.skyLayout] }), vertex: { module: this.skyModule, entryPoint: 'vs' }, fragment: { module: this.skyModule, entryPoint: 'fs', targets: [{ format }] }, primitive: { topology: 'triangle-list' } };
+    skyPipelineDesc(format, depth = null) {
+        return {
+            label: `sky ${format}`,
+            layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.skyLayout] }),
+            vertex: { module: this.skyModule, entryPoint: 'vs' },
+            fragment: { module: this.skyModule, entryPoint: 'fs', targets: [{ format }] },
+            primitive: { topology: 'triangle-list' },
+            depthStencil: depthState(depth),
+        };
     }
     writeSkyUniforms(frame) {
         const f = this.skyData;
@@ -393,7 +417,7 @@ export class SplatRenderer {
         }
         this.device.queue.writeBuffer(this.skyUniform, 0, f, 0, (n * VIEW_STRIDE) / 4);
     }
-    renderPipelineDesc(format, antialiased) {
+    renderPipelineDesc(format, antialiased, depth = null) {
         const constants = { AA: antialiased ? 1 : 0, SRGB_OUT: format.endsWith('-srgb') ? 1 : 0, ALPHA_CUT: this.alphaCut, MAX_R2: this.maxSigma * this.maxSigma };
         const blend = { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' };
         return {
@@ -402,6 +426,7 @@ export class SplatRenderer {
             vertex: { module: this.renderModule, entryPoint: 'vs', constants },
             fragment: { module: this.renderModule, entryPoint: 'fs', constants, targets: [{ format, blend: { color: blend, alpha: blend } }] },
             primitive: { topology: 'triangle-list', cullMode: 'none' },
+            depthStencil: depthState(depth),
         };
     }
     queueDecode(src, base) {
@@ -581,28 +606,30 @@ export class SplatRenderer {
     }
     render(frame) {
         const d = this.device;
-        const key = `${frame.format}|${frame.antialiased}`;
+        const depth = frame.depth ?? null;
+        const key = `${frame.format}|${frame.antialiased}|${depthKey(depth)}`;
         let pipeline = this.renderPipelines.get(key);
         if (!pipeline) {
-            pipeline = d.createRenderPipeline(this.renderPipelineDesc(frame.format, frame.antialiased));
+            pipeline = d.createRenderPipeline(this.renderPipelineDesc(frame.format, frame.antialiased, depth));
             this.renderPipelines.set(key, pipeline);
         }
+        const passKey = `${frame.format}|${depthKey(depth)}`;
         let skyPipeline = null;
         if (frame.sky) {
-            skyPipeline = this.skyPipelines.get(frame.format);
+            skyPipeline = this.skyPipelines.get(passKey);
             if (!skyPipeline) {
-                skyPipeline = d.createRenderPipeline(this.skyPipelineDesc(frame.format));
-                this.skyPipelines.set(frame.format, skyPipeline);
+                skyPipeline = d.createRenderPipeline(this.skyPipelineDesc(frame.format, depth));
+                this.skyPipelines.set(passKey, skyPipeline);
             }
             this.writeSkyUniforms(frame);
         }
         let overlayPipeline = null,
             overlayCount = 0;
         if (frame.overlay?.count > 0) {
-            overlayPipeline = this.overlayPipelines.get(frame.format);
+            overlayPipeline = this.overlayPipelines.get(passKey);
             if (!overlayPipeline) {
-                overlayPipeline = d.createRenderPipeline(this.overlayPipelineDesc(frame.format));
-                this.overlayPipelines.set(frame.format, overlayPipeline);
+                overlayPipeline = d.createRenderPipeline(this.overlayPipelineDesc(frame.format, depth));
+                this.overlayPipelines.set(passKey, overlayPipeline);
             }
             overlayCount = this.writeOverlay(frame);
         }
@@ -610,7 +637,15 @@ export class SplatRenderer {
         const encoder = d.createCommandEncoder();
         this.encodeDecodes(encoder, trash);
         this.encodeExpand(encoder);
-        const picking = frame.pick?.active && !this.pickPending && this.numActive > 0 ? this.encodePick(encoder, frame) : null;
+        let pickRequest = frame.pick?.active ? frame.pick : null;
+        if (!pickRequest && !this.pickPending && this.pickRequests.length > 0) {
+            pickRequest = this.pickRequests.shift();
+            if (this.numActive === 0) {
+                pickRequest.resolve(null);
+                pickRequest = null;
+            }
+        }
+        const picking = pickRequest && !this.pickPending && this.numActive > 0 ? this.encodePick(encoder, frame.model, pickRequest) : null;
         const nViews = Math.min(frame.views.length, MAX_VIEWS);
         const sorting = !this.canReuseSort(frame);
         if (sorting) {
@@ -658,6 +693,7 @@ export class SplatRenderer {
             const pass = encoder.beginRenderPass({
                 label: 'splats',
                 colorAttachments: [{ view: frame.views[first].target, clearValue: frame.clearColor, loadOp: frame.views[first].clear === false ? 'load' : 'clear', storeOp: 'store' }],
+                depthStencilAttachment: depth ? { view: depth.view, depthReadOnly: true, stencilReadOnly: depth.format.includes('stencil') || undefined } : undefined,
                 timestampWrites: timing && (first === 0 || end === nViews) ? { querySet: timing, ...(first === 0 && { beginningOfPassWriteIndex: 2 }), ...(end === nViews && { endOfPassWriteIndex: 3 }) } : undefined,
             });
             const eachView = (draw) => {
@@ -705,9 +741,11 @@ export class SplatRenderer {
                     this.pickRead.unmap();
                     this.pickPending = false;
                     pick.result = { u: Number.isFinite(u) ? u : null, token };
+                    pick.resolve?.(pick.result.u);
                 },
                 () => {
                     this.pickPending = false;
+                    pick.resolve?.(null);
                 },
             );
         }

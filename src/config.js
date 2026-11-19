@@ -1,4 +1,6 @@
-export const standalone = /OculusBrowser|Quest|Android|iPhone|iPad/i.test(navigator.userAgent);
+import { standalone } from './platform.js';
+
+export { standalone };
 const pick = (desktop, headset) => (standalone ? headset : desktop);
 
 export const config = {

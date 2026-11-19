@@ -31,6 +31,30 @@ import { SplatScene } from '@splnlss/dust-n-divide-viewer/scene/SplatScene.js';
 `src/main.js` is a complete example app that puts the pieces together: loading a scene, camera
 controls, VR and the HUD.
 
+### With three.js
+
+Splats can be drawn into a three.js scene, and three.js meshes in front of them hide them.
+three.js 0.187 is a peer dependency, so install it in your app:
+
+```js
+import { GaussianSplats, createWebGPURenderer } from '@splnlss/dust-n-divide-viewer/three/GaussianSplats.js';
+
+const renderer = await createWebGPURenderer();
+const splats = new GaussianSplats(renderer);
+await splats.load('https://…/lod-meta.json');
+scene.add(splats);
+
+renderer.setAnimationLoop(() => {
+    renderer.render(scene, camera);
+    splats.render(camera);
+});
+
+const point = await splats.hitTest(raycaster.ray);
+```
+
+`demo/three.html` is a working example. Not supported yet: VR through three.js, MSAA
+(`antialias` must stay off), and transparent three.js objects in front of splats.
+
 Supported scenes:
 
 - `lod-meta.json`: streamed SOG
