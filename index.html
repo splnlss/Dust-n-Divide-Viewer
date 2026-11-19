@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Dust and Divide performance demo</title>
+        <link rel="icon" href="data:," />
+        <style>
+            html,
+            body {
+                margin: 0;
+                height: 100%;
+                background: #101014;
+                color: #e8e8ee;
+                overflow: hidden;
+                font:
+                    12px/1.45 ui-monospace,
+                    SFMono-Regular,
+                    Menlo,
+                    Consolas,
+                    monospace;
+            }
+            canvas {
+                display: block;
+                width: 100vw;
+                height: 100vh;
+                touch-action: none;
+                cursor: grab;
+            }
+            #hud {
+                position: fixed;
+                left: 12px;
+                top: 12px;
+                padding: 8px 10px;
+                white-space: pre;
+                pointer-events: none;
+                background: rgba(16, 16, 20, 0.72);
+                border-radius: 6px;
+                min-width: 22ch;
+            }
+            #bar {
+                position: fixed;
+                right: 12px;
+                top: 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                align-items: flex-end;
+                max-width: min(46ch, 60vw);
+            }
+            button {
+                font: inherit;
+                font-size: 14px;
+                padding: 10px 16px;
+                border-radius: 6px;
+                border: 1px solid #5b6cff;
+                background: #2b36a8;
+                color: #fff;
+                cursor: pointer;
+            }
+            button:disabled {
+                background: #2a2a33;
+                border-color: #44444f;
+                color: #9a9aa8;
+                cursor: default;
+            }
+            #note {
+                background: rgba(16, 16, 20, 0.72);
+                border-radius: 6px;
+                padding: 8px 10px;
+                text-align: right;
+            }
+            #note:empty {
+                display: none;
+            }
+            #msg {
+                position: fixed;
+                inset: 0;
+                display: grid;
+                place-items: center;
+                padding: 24px;
+                text-align: center;
+                font-size: 14px;
+                pointer-events: none;
+            }
+            #buttons {
+                display: flex;
+                gap: 8px;
+            }
+            #drop {
+                position: fixed;
+                inset: 12px;
+                display: grid;
+                place-items: center;
+                font-size: 18px;
+                pointer-events: none;
+                border: 2px dashed #5b6cff;
+                border-radius: 12px;
+                background: rgba(16, 16, 20, 0.6);
+            }
+            #drop[hidden] {
+                display: none;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas id="canvas"></canvas>
+        <div id="hud"></div>
+        <div id="bar">
+            <div id="buttons"><button id="vr" disabled>Enter VR</button></div>
+            <div id="note"></div>
+        </div>
+        <div id="drop" hidden>Drop a .ply or .sog file</div>
+        <div id="msg">Loading…</div>
+        <script type="module" src="./src/main.js"></script>
+    </body>
+</html>

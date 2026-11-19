@@ -1,0 +1,31 @@
+image: node:22-alpine
+
+default:
+  tags:
+    - howling-metal
+
+stages:
+  - build
+  - deploy
+
+variables:
+  NETLIFY_CLI: netlify-cli@27.19.0
+
+build:
+  stage: build
+  script:
+    - node scripts/build.mjs
+  artifacts:
+    paths:
+      - dist
+    expire_in: 1 week
+
+production:
+  stage: deploy
+  needs: [build]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  environment:
+    name: production
+  script:
+    - npx --yes $NETLIFY_CLI deploy --dir dist --no-build --prod --message "$CI_COMMIT_SHORT_SHA $CI_COMMIT_TITLE"
