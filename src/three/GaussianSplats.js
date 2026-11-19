@@ -1,4 +1,4 @@
-import { Object3D, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
+import { NoToneMapping, Object3D, Vector2, Vector3, WebGPURenderer } from 'three/webgpu';
 import { invert, mat4, transformDir, transformPoint } from '../math.js';
 import { closePly, isPlyName, openPly } from '../scene/ply.js';
 import { SplatScene } from '../scene/SplatScene.js';
@@ -37,6 +37,18 @@ export async function createWebGPURenderer(parameters = {}) {
     return renderer;
 }
 
+const xrCompositors = new WeakMap();
+
+function skipOutputPassWhileCompositing(renderer) {
+    if (xrCompositors.has(renderer)) return;
+    xrCompositors.set(renderer, null);
+    const renderOutput = renderer._renderOutput;
+    renderer._renderOutput = function (target) {
+        if (this.xr.isPresenting && xrCompositors.get(this)?.compositesXr) return;
+        return renderOutput.call(this, target);
+    };
+}
+
 export class GaussianSplats extends Object3D {
     isGaussianSplats = true;
     scene = null;
@@ -45,12 +57,16 @@ export class GaussianSplats extends Object3D {
     #options;
     #ply = null;
     #invModel = mat4();
-    #views = [{ view: null, proj: null, target: null, viewport: [0, 0, 1, 1], clear: false }];
+    #eyeWorld = mat4();
+    #canvasView = [{ view: null, proj: null, target: null, viewport: [0, 0, 1, 1], clear: false }];
+    #xrView = [];
     #depth = { view: null, format: '', compare: 'less-equal' };
     #depthTexture = null;
+    #depthLayers = [];
+    #colorTexture = null;
+    #colorLayers = [];
     #size = new Vector2();
     #preparing = null;
-    #warnedXr = false;
 
     constructor(renderer, options = {}) {
         super();
@@ -60,6 +76,11 @@ export class GaussianSplats extends Object3D {
         this.#three = renderer;
         this.#options = { ...DEFAULTS, ...options };
         this.rotation.set(0, 0, Math.PI);
+        skipOutputPassWhileCompositing(renderer);
+    }
+
+    get compositesXr() {
+        return this.splatRenderer !== null && this.visible && this.#three._getFrameBufferTarget() !== null && this.#three.depth && this.#three.toneMapping === NoToneMapping;
     }
 
     get budget() {
@@ -96,34 +117,33 @@ export class GaussianSplats extends Object3D {
         const three = this.#three;
         const renderer = this.splatRenderer;
         if (!renderer) return;
-        if (three.xr.isPresenting) {
-            if (!this.#warnedXr) console.warn('GaussianSplats does not render in WebXR yet.');
-            this.#warnedXr = true;
-            return;
-        }
         const depth = this.#currentDepth();
-        const format = three.backend.utils.getPreferredCanvasFormat();
+        const inXr = three.xr.isPresenting;
+        const format = inXr ? this.#xrColorTexture().format : three.backend.utils.getPreferredCanvasFormat();
         const antialiased = this.scene.antialiased;
         if (!renderer.isPrepared(format, antialiased, depth)) {
             this.#preparing ??= renderer.prepare(format, antialiased, depth).finally(() => (this.#preparing = null));
             return;
         }
+        const views = inXr ? this.#xrViews(depth) : this.#canvasViews(camera);
         this.updateWorldMatrix(true, false);
         const model = this.matrixWorld.elements;
-        const view = camera.matrixWorldInverse.elements;
         invert(this.#invModel, model);
-        const cam = transformPoint(this.#invModel, [camera.matrixWorld.elements[12], camera.matrixWorld.elements[13], camera.matrixWorld.elements[14]]);
+        let x = 0,
+            y = 0,
+            z = 0;
+        for (const v of views) {
+            invert(this.#eyeWorld, v.view);
+            x += this.#eyeWorld[12] / views.length;
+            y += this.#eyeWorld[13] / views.length;
+            z += this.#eyeWorld[14] / views.length;
+        }
+        const view = views[0].view;
+        const cam = transformPoint(this.#invModel, [x, y, z]);
         const fwd = transformDir(this.#invModel, [-view[2], -view[6], -view[10]]);
-        const now = performance.now();
-        this.scene.update(cam, fwd, now);
-        const v = this.#views[0];
-        v.view = view;
-        v.proj = camera.projectionMatrix.elements;
-        v.target = three.backend.context.getCurrentTexture().createView();
-        const size = three.getDrawingBufferSize(this.#size);
-        v.viewport[2] = size.width;
-        v.viewport[3] = size.height;
-        renderer.render({ views: this.#views, model, format, near: camera.near, antialiased, minTrace: this.#options.minPixel ** 2, depth });
+        this.scene.update(cam, fwd, performance.now());
+        const near = inXr ? three.xr.getCamera().near : camera.near;
+        renderer.render({ views, model, format, near, antialiased, minTrace: this.#options.minPixel ** 2, depth });
     }
 
     async hitTest(ray, maxDistance = 300) {
@@ -145,16 +165,71 @@ export class GaussianSplats extends Object3D {
         this.scene = null;
     }
 
+    #canvasViews(camera) {
+        const three = this.#three;
+        const v = this.#canvasView[0];
+        v.view = camera.matrixWorldInverse.elements;
+        v.proj = camera.projectionMatrix.elements;
+        v.target = three.backend.context.getCurrentTexture().createView();
+        const size = three.getDrawingBufferSize(this.#size);
+        v.viewport[2] = size.width;
+        v.viewport[3] = size.height;
+        return this.#canvasView;
+    }
+
+    #xrColorTexture() {
+        return this.#three.backend.get(this.#three.getOutputRenderTarget().texture).texture;
+    }
+
+    #xrViews(depth) {
+        const three = this.#three;
+        const output = three.backend.get(three.getOutputRenderTarget().texture);
+        const descriptors = output.xrViewDescriptors ?? [];
+        const cameras = three.xr.getCamera().cameras;
+        const composite = depth && this.compositesXr;
+        if (composite) xrCompositors.set(three, this);
+        const fbColor = composite ? three.backend.get(three._getFrameBufferTarget().texture).texture : null;
+        if (fbColor !== this.#colorTexture) {
+            this.#colorTexture = fbColor;
+            this.#colorLayers = [];
+        }
+        this.#xrView.length = cameras.length;
+        for (let i = 0; i < cameras.length; i++) {
+            const c = cameras[i];
+            const layer = descriptors[i]?.baseArrayLayer ?? i;
+            const v = (this.#xrView[i] ??= { viewport: [0, 0, 1, 1], ownPass: true });
+            v.view = c.matrixWorldInverse.elements;
+            v.proj = c.projectionMatrix.elements;
+            v.target = output.texture.createView(descriptors[i]);
+            v.viewport[0] = c.viewport.x;
+            v.viewport[1] = c.viewport.y;
+            v.viewport[2] = c.viewport.z;
+            v.viewport[3] = c.viewport.w;
+            // Quest Browser 157 corrupts passes that load its XR swapchain layers, so the eye is cleared and three's frame is copied in by sampling.
+            v.clear = composite;
+            v.colorSource = composite ? (this.#colorLayers[layer] ??= fbColor.createView({ dimension: '2d', baseArrayLayer: layer, arrayLayerCount: 1 })) : undefined;
+            v.depthSource = composite ? this.#depthLayer(layer) : undefined;
+        }
+        return this.#xrView;
+    }
+
+    #depthLayer(layer) {
+        const views = this.#depthLayers;
+        views[layer] ??= this.#depthTexture.createView({ dimension: '2d', baseArrayLayer: layer, arrayLayerCount: 1, aspect: 'depth-only' });
+        return views[layer];
+    }
+
     #currentDepth() {
         const three = this.#three;
         if (!three.depth) return null;
-        const target = three._getFrameBufferTarget();
+        const target = three._getFrameBufferTarget() ?? three.getOutputRenderTarget();
         const depthTexture = target ? three._textures.get(target).depthTexture : three.getCanvasTarget().depthTexture;
         const gpuTexture = depthTexture && three.backend.get(depthTexture).texture;
         if (!gpuTexture) return null;
         if (gpuTexture !== this.#depthTexture) {
             this.#depthTexture = gpuTexture;
-            this.#depth.view = gpuTexture.createView();
+            this.#depthLayers = [];
+            this.#depth.view = gpuTexture.createView({ dimension: '2d', baseArrayLayer: 0, arrayLayerCount: 1 });
             this.#depth.format = gpuTexture.format;
             this.#depth.compare = three.reversedDepthBuffer ? 'greater-equal' : 'less-equal';
         }

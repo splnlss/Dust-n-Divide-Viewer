@@ -78,6 +78,9 @@ export class SplatRenderer {
     skyGroup;
     skyData = new Float32Array((VIEW_STRIDE * MAX_VIEWS) / 4);
     overlayPipelines = new Map();
+    underlayPipelines = new Map();
+    underlayGroups = new WeakMap();
+    underlayDepth = null;
     overlayModule;
     overlayLayout;
     overlayUniform;
@@ -183,8 +186,8 @@ export class SplatRenderer {
         }
     }
     async init(formats, antialiased) {
-        const [decodeSrc, expandSrc, sortSrc, renderSrc, plySrc, skySrc, overlaySrc, pickSrc] = await Promise.all(
-            ['decode', 'expand', 'sort', 'render', 'decode_ply', 'sky', 'overlay', 'pick'].map(async (name) => {
+        const [decodeSrc, expandSrc, sortSrc, renderSrc, plySrc, skySrc, overlaySrc, pickSrc, underlaySrc] = await Promise.all(
+            ['decode', 'expand', 'sort', 'render', 'decode_ply', 'sky', 'overlay', 'pick', 'underlay'].map(async (name) => {
                 const r = await fetch(new URL(`./shaders/${name}.wgsl`, import.meta.url));
                 if (!r.ok) throw new Error(`Could not load shader ${name}.wgsl`);
                 return r.text();
@@ -211,6 +214,11 @@ export class SplatRenderer {
         this.skyModule = d.createShaderModule({ label: 'sky', code: skySrc });
         this.skyLayout = layout([un(0, GPUShaderStage.FRAGMENT, true)]);
         this.overlayModule = d.createShaderModule({ label: 'overlay', code: overlaySrc });
+        this.underlayModule = d.createShaderModule({ label: 'underlay', code: underlaySrc });
+        this.underlayLayout = layout([
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'unfilterable-float' } },
+        ]);
         this.overlayLayout = layout([un(0, GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, true)]);
         this.renderModule = d.createShaderModule({ label: 'render', code: preprocess(renderSrc, { F16: this.f16 }) });
         const pickLayout = layout([un(0), ro(1), ro(2), rw(3)]);
@@ -315,7 +323,45 @@ export class SplatRenderer {
         const passKey = `${format}|${depthKey(depth)}`;
         if (!this.skyPipelines.has(passKey)) this.skyPipelines.set(passKey, await d.createRenderPipelineAsync(this.skyPipelineDesc(format, depth)));
         if (!this.overlayPipelines.has(passKey)) this.overlayPipelines.set(passKey, await d.createRenderPipelineAsync(this.overlayPipelineDesc(format, depth)));
+        if (depth && !this.underlayPipelines.has(passKey)) this.underlayPipelines.set(passKey, await d.createRenderPipelineAsync(this.underlayPipelineDesc(format, depth)));
         return p;
+    }
+    underlayPipelineDesc(format, depth) {
+        return {
+            label: `underlay ${format}`,
+            layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.underlayLayout] }),
+            vertex: { module: this.underlayModule, entryPoint: 'vs' },
+            fragment: { module: this.underlayModule, entryPoint: 'fs', constants: { SRGB_OUT: format.endsWith('-srgb') ? 1 : 0 }, targets: [{ format }] },
+            primitive: { topology: 'triangle-list' },
+            depthStencil: { format: depth.format, depthWriteEnabled: true, depthCompare: 'always' },
+        };
+    }
+    underlayTarget(format, width, height) {
+        const t = this.underlayDepth;
+        if (t && t.format === format && t.width >= width && t.height >= height) return t.view;
+        t?.texture.destroy();
+        const texture = this.device.createTexture({ label: 'underlay depth', size: [width, height], format, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+        this.underlayDepth = { texture, format, width, height, view: texture.createView() };
+        return this.underlayDepth.view;
+    }
+    underlayGroup(view) {
+        let byDepth = this.underlayGroups.get(view.colorSource);
+        if (!byDepth) {
+            byDepth = new WeakMap();
+            this.underlayGroups.set(view.colorSource, byDepth);
+        }
+        let g = byDepth.get(view.depthSource);
+        if (!g) {
+            g = this.device.createBindGroup({
+                layout: this.underlayLayout,
+                entries: [
+                    { binding: 0, resource: view.depthSource },
+                    { binding: 1, resource: view.colorSource },
+                ],
+            });
+            byDepth.set(view.depthSource, g);
+        }
+        return g;
     }
     isPrepared(format, antialiased, depth = null) {
         return this.renderPipelines.has(`${format}|${antialiased}|${depthKey(depth)}`);
@@ -324,6 +370,7 @@ export class SplatRenderer {
         for (const value of Object.values(this)) {
             if (value instanceof GPUBuffer || value instanceof GPUTexture || value instanceof GPUQuerySet) value.destroy();
         }
+        this.underlayDepth?.texture.destroy();
         for (const pick of this.pickRequests.splice(0)) pick.resolve(null);
     }
     hitTest(ray) {
@@ -689,11 +736,26 @@ export class SplatRenderer {
         }
         for (let first = 0; first < nViews; ) {
             let end = first + 1;
-            while (end < nViews && frame.views[end].clear === false) end++;
+            while (end < nViews && frame.views[end].clear === false && !frame.views[end].ownPass) end++;
+            const underlay = depth && frame.views[first].colorSource && frame.views[first].depthSource;
+            let depthAttachment;
+            if (underlay) {
+                let width = 1,
+                    height = 1;
+                for (let v = first; v < end; v++) {
+                    const [x, y, w, h] = frame.views[v].viewport;
+                    width = Math.max(width, x + w);
+                    height = Math.max(height, y + h);
+                }
+                depthAttachment = { view: this.underlayTarget(depth.format, width, height), depthLoadOp: 'clear', depthClearValue: 1, depthStoreOp: 'discard' };
+                if (depth.format.includes('stencil')) Object.assign(depthAttachment, { stencilLoadOp: 'clear', stencilStoreOp: 'discard' });
+            } else if (depth) {
+                depthAttachment = { view: depth.view, depthReadOnly: true, stencilReadOnly: depth.format.includes('stencil') || undefined };
+            }
             const pass = encoder.beginRenderPass({
                 label: 'splats',
                 colorAttachments: [{ view: frame.views[first].target, clearValue: frame.clearColor, loadOp: frame.views[first].clear === false ? 'load' : 'clear', storeOp: 'store' }],
-                depthStencilAttachment: depth ? { view: depth.view, depthReadOnly: true, stencilReadOnly: depth.format.includes('stencil') || undefined } : undefined,
+                depthStencilAttachment: depthAttachment,
                 timestampWrites: timing && (first === 0 || end === nViews) ? { querySet: timing, ...(first === 0 && { beginningOfPassWriteIndex: 2 }), ...(end === nViews && { endOfPassWriteIndex: 3 }) } : undefined,
             });
             const eachView = (draw) => {
@@ -703,6 +765,18 @@ export class SplatRenderer {
                     draw(v);
                 }
             };
+            if (underlay) {
+                let underlayPipeline = this.underlayPipelines.get(passKey);
+                if (!underlayPipeline) {
+                    underlayPipeline = d.createRenderPipeline(this.underlayPipelineDesc(frame.format, depth));
+                    this.underlayPipelines.set(passKey, underlayPipeline);
+                }
+                pass.setPipeline(underlayPipeline);
+                eachView((v) => {
+                    pass.setBindGroup(0, this.underlayGroup(frame.views[v]));
+                    pass.draw(3);
+                });
+            }
             if (skyPipeline) {
                 pass.setPipeline(skyPipeline);
                 eachView((v) => {

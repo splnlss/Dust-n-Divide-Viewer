@@ -52,8 +52,9 @@ renderer.setAnimationLoop(() => {
 const point = await splats.hitTest(raycaster.ray);
 ```
 
-`demo/three.html` is a working example. Not supported yet: VR through three.js, MSAA
-(`antialias` must stay off), and transparent three.js objects in front of splats.
+`demo/three.html` is a working example, including VR through three.js. Not supported yet: MSAA
+(`antialias` must stay off), tone mapping in VR, more than one `GaussianSplats` per renderer in VR,
+and transparent three.js objects in front of splats.
 
 Supported scenes:
 

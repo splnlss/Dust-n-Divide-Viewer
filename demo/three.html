@@ -47,10 +47,49 @@
                 background: rgba(16, 16, 20, 0.72);
                 border-radius: 6px;
             }
+            #bar {
+                position: fixed;
+                right: 12px;
+                top: 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                align-items: flex-end;
+                max-width: min(46ch, 60vw);
+            }
+            button {
+                font: inherit;
+                font-size: 14px;
+                padding: 10px 16px;
+                border-radius: 6px;
+                border: 1px solid #5b6cff;
+                background: #2b36a8;
+                color: #fff;
+                cursor: pointer;
+            }
+            button:disabled {
+                background: #2a2a33;
+                border-color: #44444f;
+                color: #9a9aa8;
+                cursor: default;
+            }
+            #note {
+                background: rgba(16, 16, 20, 0.72);
+                border-radius: 6px;
+                padding: 8px 10px;
+                text-align: right;
+            }
+            #note:empty {
+                display: none;
+            }
         </style>
     </head>
     <body>
         <div id="hud"></div>
+        <div id="bar">
+            <button id="vr" disabled>Enter VR</button>
+            <div id="note"></div>
+        </div>
         <div id="msg">Loading…</div>
         <script type="module" src="./three.js"></script>
     </body>

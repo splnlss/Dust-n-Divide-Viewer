@@ -5,11 +5,13 @@ import { GaussianSplats, createWebGPURenderer } from '../src/three/GaussianSplat
 const SCENE_URL = 'https://pub-dd92ae5131ec49f1bbd411b51a858249.r2.dev/01_SLV_RondaJoseph/20260820_RondaLobato/web/lod/lod-meta.json';
 const msg = document.getElementById('msg');
 const hud = document.getElementById('hud');
+const EYE_HEIGHT = 1.6;
 
 async function main() {
     const renderer = await createWebGPURenderer();
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(innerWidth, innerHeight);
+    renderer.xr.enabled = true;
     document.body.prepend(renderer.domElement);
 
     const scene = new THREE.Scene();
@@ -21,6 +23,9 @@ async function main() {
 
     const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.05, 1000);
     camera.position.set(0, 2.8, 12);
+    const rig = new THREE.Group();
+    rig.add(camera);
+    scene.add(rig);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 2.4, 0);
     controls.update();
@@ -50,6 +55,40 @@ async function main() {
         if (!hit) return;
         marker.position.copy(hit);
         marker.visible = true;
+    });
+
+    const vrButton = document.getElementById('vr');
+    const note = document.getElementById('note');
+    renderer.xr.addEventListener('sessionstart', () => {
+        const p = camera.position,
+            t = controls.target;
+        rig.position.set(p.x, p.y - EYE_HEIGHT, p.z);
+        rig.rotation.y = Math.atan2(-(t.x - p.x), -(t.z - p.z));
+        vrButton.textContent = 'Exit VR';
+    });
+    renderer.xr.addEventListener('sessionend', () => {
+        rig.position.set(0, 0, 0);
+        rig.rotation.set(0, 0, 0);
+        vrButton.textContent = 'Enter VR';
+    });
+    if (!(await navigator.xr?.isSessionSupported('immersive-vr').catch(() => false))) {
+        note.textContent = 'No VR headset available to this browser.';
+    } else if (typeof XRGPUBinding === 'undefined') {
+        note.textContent = 'VR with WebGPU needs WebGPU in WebXR. In Quest Browser 146+, open chrome://flags, enable "WebXR experimental features", then relaunch the browser.';
+    } else {
+        vrButton.disabled = false;
+    }
+    vrButton.addEventListener('click', async () => {
+        const session = renderer.xr.getSession();
+        if (session) return void session.end();
+        vrButton.disabled = true;
+        try {
+            await renderer.xr.setSession(await navigator.xr.requestSession('immersive-vr', { requiredFeatures: ['webgpu'], optionalFeatures: ['local-floor'] }));
+        } catch (err) {
+            note.textContent = `Could not start VR: ${err.message}`;
+        } finally {
+            vrButton.disabled = false;
+        }
     });
 
     addEventListener('resize', () => {
